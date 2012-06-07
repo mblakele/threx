@@ -9,7 +9,9 @@ and you need to reindex the database.
 Suddenly you discover that the server is running low on disk space.
 Left to itself the reindexer can paint the database into a corner,
 leaving it without enough room to merge existing stands.
-If you act promptly, Threx can help.
+The long-term solution is to add more disk space,
+and you should start working on that right away.
+But meanwhile, Threx may be able to help.
 
 Threx includes a scheduled task that checks the selected database
 to see if it is running out of disk space. If the situation looks dangerous,
@@ -38,6 +40,13 @@ This value was chosen to provide a safety factor in between task invocations.
 When Threx detects that a forest has a large number of deleted fragments,
 and could recover significant disk space by merging,
 it starts a merge.
+
+Threx logs various messages as it checks the database and its forests.
+
+You may notice that Threx sometimes turns reindexing on and off
+in quick succession. This is normal. Threx is slowing down reindexing,
+tapping on the breaks so that ongoing merges have a chance
+to relieve the shortage of disk space.
 
 Reporting
 ---
