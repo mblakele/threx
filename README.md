@@ -41,7 +41,8 @@ When Threx detects that a forest has a large number of deleted fragments,
 and could recover significant disk space by merging,
 it starts a merge.
 
-Threx logs various messages as it checks the database and its forests.
+Threx logs various messages as it checks the database and its forests,
+and modifies the reindexer state.
 
 You may notice that Threx sometimes turns reindexing on and off
 in quick succession. This is normal. Threx is slowing down reindexing,
@@ -67,7 +68,7 @@ When this exceeds 3%, merging the forest may be worthwhile.
 Security
 ---
 
-More or less all of Presta's functionality depends on admin privileges.
+More or less all of Threx's functionality depends on admin privileges.
 The scheduled task must run as admin, or as a highly-privileged user.
 Reporting could run as a less-privileged user,
 but still needs access to `xdmp:forest-status` and `xdmp:forest-counts`,
