@@ -18,6 +18,8 @@ xquery version "1.0-ml";
  : The use of the Apache License does not indicate that this project is
  : affiliated with the Apache Software Foundation.
  :
+ : TODO per-host accounting, for large clusters?
+ :
  :)
 module namespace rx="com.blakeley.threx" ;
 
@@ -43,9 +45,9 @@ declare variable $LABEL := 'com.blakeley.threx' ;
  : Space used varies by the documents in the database, too.
  :)
 
-declare variable $LIMIT-DELETED := 0.03 ;
+declare variable $LIMIT-DELETED := 0.019 ;
 
-declare variable $LIMIT-SPACE := 0.88 ;
+declare variable $LIMIT-SPACE := 0.89 ;
 
 declare variable $MUTEX := concat('.mutex/', $LABEL) ;
 
@@ -53,6 +55,12 @@ declare function rx:log($msg as item()*, $level as xs:string)
 as empty-sequence()
 {
   xdmp:log(text { $LABEL, $msg }, $level)
+};
+
+declare function rx:fine($msg as item()*)
+as empty-sequence()
+{
+  xdmp:log(text { $LABEL, $msg }, 'fine')
 };
 
 declare function rx:debug($msg as item()*)
@@ -201,6 +209,7 @@ as element()
         xdmp:forest-counts($fs/fs:forest-id, 'stands-counts')))
     let $deleted-fmt := format-number(
       round-half-to-even(100 * $deleted, 1), "0.0")
+    let $is-merging := exists($fs-list/fs:merges/fs:merge)
     order by $ratio descending, $deleted descending
     return element tr {
       for $i in (
@@ -212,7 +221,7 @@ as element()
           "text-align: right;"[$i castable as xs:double] },
         $i },
       for $i in (
-        if (empty($fs-list/fs:merges/fs:merge)) then ''
+        if (not($is-merging)) then ''
         else format-number(
           (: Merges sometimes overshoot the projected size :)
             (sum($fs-list/fs:merges/fs:merge/max(fs:final-size|fs:current-size))
@@ -228,7 +237,7 @@ as element()
         $i },
       element td {
         attribute style { "text-align: center;" },
-        'x'[$deleted gt 0.03] },
+        'T'[not($is-merging) and $deleted gt $LIMIT-DELETED] },
       element td {
         attribute style {
           'width: 33%;',
@@ -330,7 +339,7 @@ declare function rx:maybe(
   $db as xs:unsignedLong)
 as empty-sequence()
 {
-  rx:debug(
+  rx:fine(
     ('starting: reindex =', admin:database-get-reindexer-enable($CONFIG, $db),
       'merge =', count(xdmp:merging()))),
   (: Make sure we have exclusive control,
@@ -345,7 +354,7 @@ as empty-sequence()
   else rx:maybe-enable($db),
   (: Some forests may need merges, to remove deleted fragments :)
   rx:maybe-merge($db),
-  rx:debug(
+  rx:fine(
     ('finished: reindex =', admin:database-get-reindexer-enable($CONFIG, $db),
       'merge =', count(xdmp:merging())))
 };
