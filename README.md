@@ -40,7 +40,7 @@ Usage
 ---
 
 Whenever Threx detects that a complete merge would use more than
-88% of the available disk space, it pauses reindexing.
+a set proportion of the available disk space, it pauses reindexing.
 This value was chosen to provide a safety factor in between task invocations.
 When Threx detects that a forest has a large number of deleted fragments,
 and could recover significant disk space by merging,
@@ -64,11 +64,12 @@ but focused on whether or not the current reindex and merge tasks
 are likely to fill up the disk.
 
 * `Committed %` metric is a ratio of future merge obligations
-to free disk space. When this exceeds 88%, the next Threx task
-will pause reindexing.
+to free disk space. When this exceeds the space ratio limit,
+the next Threx task will pause reindexing.
 * `Merging GiB` measures the remaining GiB in current merge tasks.
 * `Recoverable %` shows the ratio of deleted fragments to active fragments.
-When this exceeds 3%, merging the forest may be worthwhile.
+When this exceeds the deleted fragment ratio limit,
+merging the forest is worthwhile.
 
 Known Issues
 ---
@@ -112,7 +113,7 @@ This can happen at the end of a large merge,
 if the actual size of the new stand exceeds
 the database projection for its final size.
 Because of this risk, Threx pauses reindexing when
-88% of space is committed to existing and future merges.
+less than 100% of space is committed to existing and future merges.
 
 Security
 ---
