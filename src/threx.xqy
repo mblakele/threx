@@ -33,7 +33,14 @@ declare variable $CONFIG := admin:get-configuration() ;
 declare variable $LABEL := 'com.blakeley.threx' ;
 
 (: Tuning these limits boils down to...
- : How much trouble can we get into in between scheduled task runs?
+ : How much trouble can we get into between scheduled task runs?
+ : How far wrong can the server be when estimating final size of a merge?
+ :
+ : Note that the latter depends on what the reindexer is doing.
+ : Adding indexes consumes space.
+ : Removing indexes frees space.
+ : Different indexes use different amounts of space.
+ : Space used varies by the documents in the database, too.
  :)
 
 declare variable $LIMIT-DELETED := 0.03 ;
@@ -74,14 +81,18 @@ as empty-sequence()
 
 declare function rx:device-forests-have(
   $fs-list as element(fs:forest-status)*)
-as xs:unsignedLong
+as xs:long
 {
-  sum((0, $fs-list[1]/fs:device-space))
+  sum(
+    (0,
+      $fs-list[1]/fs:device-space,
+      (: Allow for current size of in-progress merges. :)
+      sum($fs-list/fs:merges/fs:merge/fs:current-size)))
 };
 
 declare function rx:device-forests-need(
   $fs-list as element(fs:forest-status)*)
-as xs:unsignedLong
+as xs:long
 {
   let $merging := data(
     $fs-list/fs:merges/fs:merge/fs:input-stands/fs:stand-id)
@@ -93,9 +104,10 @@ as xs:unsignedLong
       $fs-list/fs:stands/fs:stand[
         fs:stand-kind eq 'Active'
         and not(fs:stand-id = $merging)]/fs:disk-size,
-      (: Budget space to finish any merges already in progress. :)
-      sum($fs-list/fs:merges/fs:merge/fs:final-size)
-      - sum($fs-list/fs:merges/fs:merge/fs:current-size)))
+      (: Allow for size of in-progress merges, which sometimes overshoot. :)
+      sum(
+        $fs-list/fs:merges/fs:merge/max(
+          fs:final-size|fs:current-size))))
 };
 
 declare function rx:db-forest-device-map(
@@ -125,7 +137,9 @@ as xs:double
 {
   (:
    : Aggregate forest sizes across devices.
-   : When checking the size limit, allow for in-progress merges.
+   : NB - Occasionally the ratio will be very high because a large merge
+   : has finished, but the old stands have not been deleted.
+   : These deleting stands are invisible to us, but reduce the 'have' space.
    :)
   max(
     let $m := rx:db-forest-device-map($db)
@@ -133,11 +147,7 @@ as xs:double
     let $fs-list := map:get($m, $key)
     let $need := rx:device-forests-need($fs-list)
     let $have := rx:device-forests-have($fs-list)
-    let $ratio := ($need div $have)
-    let $DEBUG := if ($ratio lt 1) then () else rx:debug(
-      ('high ratio', $ratio,
-        normalize-space(xdmp:quote($fs-list))))
-    return $ratio)
+    return $need div $have)
 };
 
 declare function rx:is-forest-merge-ready(
@@ -158,12 +168,11 @@ as xs:unsignedLong?
   return $id
 };
 
-(: TODO refactor to avoid repeated code :)
 declare function rx:report(
   $db as xs:unsignedLong)
 as element()
 {
-  (: report disk-size ratio with merge status :)
+  (: Report space ratio, with merge status and deleted ratio. :)
   <table xmlns="http://www.w3.org/1999/xhtml" width="85%">
   {
     element caption {
@@ -187,9 +196,6 @@ as element()
     let $have := rx:device-forests-have($fs-list)
     let $need := rx:device-forests-need($fs-list)
     let $ratio := xs:double($need div $have)
-    let $DEBUG := if ($ratio lt 1) then () else rx:debug(
-      ('high ratio', $ratio, $need, $have,
-        normalize-space(xdmp:quote($fs-list))))
     let $deleted := (
       for $fs in $fs-list return rx:forest-deleted-ratio(
         xdmp:forest-counts($fs/fs:forest-id, 'stands-counts')))
@@ -208,7 +214,8 @@ as element()
       for $i in (
         if (empty($fs-list/fs:merges/fs:merge)) then ''
         else format-number(
-            (sum($fs-list/fs:merges/fs:merge/fs:final-size)
+          (: Merges sometimes overshoot the projected size :)
+            (sum($fs-list/fs:merges/fs:merge/max(fs:final-size|fs:current-size))
               - sum($fs-list/fs:merges/fs:merge/fs:current-size))
             div 1024, "#,###,##0"),
         if (empty($fs-list/fs:merges/fs:merge)) then ''
@@ -239,9 +246,10 @@ declare function rx:maybe-merge(
 as empty-sequence()
 {
   (: Should we merge any forests?
-   : Make sure at least one disk looks fairly full.
-   : Consider forests that are not already merging,
-   : and that have a significant number of deleted fragments.
+   : Rule 1 = Let the forest merge naturally if possible.
+   : So do not even consider forests that are not already merging.
+   : Make sure at least one filesystem looks fairly full,
+   : and only merge forests that have significant deleted fragments.
    :)
   rx:debug(('maybe-merge', xdmp:database-name($db))),
   let $db-level := rx:db-level($db)
@@ -258,7 +266,7 @@ as empty-sequence()
     return xdmp:merge(
       <options xmlns="xdmp:merge">
       {
-        rx:notice(
+        rx:info(
           ('starting merge on database', xdmp:database-name($db),
             'level', format-number($db-level, "0.00"),
             'forests', count($forest-list), xdmp:forest-name($forest-list))),
@@ -280,7 +288,7 @@ as empty-sequence()
         ('proceeding with reindex on database', xdmp:database-name($db),
           'level', format-number($db-level, "0.00"))))
     else (
-      rx:notice(
+      rx:info(
         ('disabling reindexing on database', xdmp:database-name($db),
         'level', format-number($db-level, "0.00"))),
       xdmp:set(
@@ -310,7 +318,7 @@ as empty-sequence()
           'level', format-number($db-level, "0.00")))
       (: Time to let the reindexer proceed. :)
       else (
-        rx:notice(
+        rx:info(
           ('re-enabling reindexing on database', xdmp:database-name($db),
         'level', format-number($db-level, "0.00"))),
         xdmp:set(
