@@ -250,6 +250,12 @@ as element()
   </table>
 };
 
+declare function rx:report()
+as element()
+{
+  rx:report(xdmp:database())
+};
+
 declare function rx:maybe-merge(
   $db as xs:unsignedLong)
 as empty-sequence()
